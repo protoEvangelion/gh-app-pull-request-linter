@@ -10,14 +10,6 @@ type PrBody = NonNullable<PullRequest['body']>
 export = (app: Probot) => {
   app.log('The app was loaded: ', new Date())
 
-  app.on('issues.edited', async (context) => {
-    console.log('ISSUE PAYLOAD', context.payload)
-  })
-
-  app.on('pull_request.closed', async (context) => {
-    console.log('PR CLOSED PAYLOAD', context.payload)
-  })
-
   app.on('pull_request.edited', async (context) => {
     const { pull_request: pullRequest } = context.payload
 
@@ -48,17 +40,18 @@ function lintPrBody(pullRequest: PullRequest) {
   const {
     body,
     head: { sha },
+    html_url,
   } = pullRequest
 
   if (!body) {
     return blockPR(sha, '❌ Pull request body must not be empty.')
   }
 
-  if (requiresQeTeamTesting(body)) {
+  if (requiresQeTeamTesting(body, html_url)) {
     let msg = `
-      ${checkJiraSection(body)}
-      ${checkChangelogSection(body)}
-      ${checkTestingSection(body)}
+      ${checkJiraSection(body, html_url)}
+      ${checkChangelogSection(body, html_url)}
+      ${checkTestingSection(body, html_url)}
     `
 
     return msg.includes('❌') ? blockPR(sha, msg) : passPR(sha, msg)
@@ -67,28 +60,39 @@ function lintPrBody(pullRequest: PullRequest) {
   return passPR(sha, '✅ Required sections have been correctly completed.')
 }
 
-function requiresQeTeamTesting(body: PrBody): boolean {
-  return (
-    body.match(/\[(?<checked>.)\] Requires QE Testing/)?.groups?.checked === 'x'
-  )
+function requiresQeTeamTesting(body: PrBody, url: string): boolean {
+  const checkbox =
+    body.match(/\[(?<checked>.)\] Requires QE Testing/)?.groups?.checked || ''
+
+  logInfo('Parsed QE checkbox', checkbox, url)
+
+  return checkbox === 'x'
 }
 
-function checkJiraSection(body: PrBody): string {
+function checkJiraSection(body: PrBody, url: string): string {
   const jira =
     body
       .match(/## Jira Ticket\(s\)(?<jira>.*?)<!--/s)
       ?.groups?.jira?.trim?.() || ''
+
+  logInfo('Parsed Jira section', jira, url)
 
   return jira.length < 3
     ? '❌ Jira ticket must be included if QE testing checkbox is true.'
     : '✅ Jira ticket included.'
 }
 
-function checkChangelogSection(body: PrBody): string {
+function logInfo(str: string, variable: string, url: string) {
+  console.log(`${str}: -->${variable}<-- (${url})`)
+}
+
+function checkChangelogSection(body: PrBody, url: string): string {
   const changelog =
     body
       .match(/## Public Changelog(?<changelog>.*?)## Technical Description/s)
       ?.groups?.changelog?.trim?.() || ''
+
+  logInfo('Parsed changelog section', changelog, url)
 
   return /\[(FEATURE|ENHANCEMENT|DEPRECATED|REMOVED|BUGFIX|SECURITY|PERFORMANCE|CHORE)\]/.test(
     changelog
@@ -97,11 +101,13 @@ function checkChangelogSection(body: PrBody): string {
     : '❌ Changelog must follow format: "[FEATURE] Add github oauth login as a new option for logging in.". See PR body comment for more examples.'
 }
 
-function checkTestingSection(body: PrBody): string {
+function checkTestingSection(body: PrBody, url: string): string {
   const testingInstructions =
     body
       .match(/## Testing Instructions(?<testing>.*?)## Screenshots/s)
       ?.groups?.testing?.trim?.() || ''
+
+  logInfo('Parsed testing section', testingInstructions, url)
 
   return testingInstructions.length
     ? '✅ Testing instructions filled out.'
