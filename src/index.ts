@@ -46,7 +46,9 @@ export = (app: Probot) => {
     //   conclusion: 'success',
     // }
 
-    context.octokit.checks.create(context.repo(checkOptions))
+    const res = await context.octokit.checks.create(context.repo(checkOptions))
+
+    console.log(res)
 
     // const issueComment = context.issue({
     //   body: "Thanks for opening this issue!",
