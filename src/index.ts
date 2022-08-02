@@ -34,6 +34,8 @@ export = (app: Probot) => {
       },
     }
 
+    console.log(checkOptions)
+
     // const failedOptions = {
     //   status: 'completed',
     //   conclusion: 'failure',
