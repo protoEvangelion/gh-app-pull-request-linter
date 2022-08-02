@@ -1,6 +1,6 @@
 #!/bin/bash
 
-npm install --production
+npm install
 npm run build
 
 echo APP_ID=8 >> .env
