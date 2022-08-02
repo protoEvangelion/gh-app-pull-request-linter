@@ -1,7 +1,15 @@
+import { PullRequest } from '@octokit/webhooks-types'
+import { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
 import { Probot } from 'probot'
 
+type CheckOptions = RestEndpointMethodTypes['checks']['create']['parameters']
+type PrBody = NonNullable<PullRequest['body']>
+
+/** MAIN PROBOT PROGRAM */
+
 export = (app: Probot) => {
-  app.log('Yay! The app was loaded!')
+  app.log('The app was loaded: ', new Date())
+
   app.on('issues.edited', async (context) => {
     console.log('ISSUE PAYLOAD', context.payload)
   })
@@ -11,53 +19,115 @@ export = (app: Probot) => {
   })
 
   app.on('pull_request.edited', async (context) => {
-    console.log('!!!!!!!!!!')
-
     const { pull_request: pullRequest } = context.payload
 
-    const checkOptions = {
-      name: 'Lint Pull Request Description',
-      status: 'completed',
-      conclusion: 'success',
-      started_at: new Date().toISOString(),
-      head_branch: '', // workaround for https://github.com/octokit/rest.js/issues/874
-      head_sha: pullRequest.head.sha,
-      output: {
-        title: `title stuff`,
-        summary: `summary stuff`,
-      },
-      // workaround random "Bad Credentials" errors
-      // https://github.community/t5/GitHub-API-Development-and/Random-401-errors-after-using-freshly-generated-installation/m-p/22905/highlight/true#M1596
-      request: {
-        retries: 3,
-        retryAfter: 3,
-      },
-    }
+    const checkOptions = lintPrBody(pullRequest)
 
-    console.log(checkOptions)
-
-    // const failedOptions = {
-    //   status: 'completed',
-    //   conclusion: 'failure',
-    // }
-
-    // const successOptions = {
-    //   status: 'completed',
-    //   conclusion: 'success',
-    // }
-
-    const res = await context.octokit.checks.create(context.repo(checkOptions))
-
-    console.log(res)
-
-    // const issueComment = context.issue({
-    //   body: "Thanks for opening this issue!",
-    // });
-    // await context.octokit.issues.createComment(issueComment);
+    await context.octokit.checks
+      .create(context.repo(checkOptions))
+      .then(() => console.log('Check successful: ', checkOptions))
+      .catch((e) => console.error('Check failed: ', checkOptions, e))
   })
-  // For more information on building apps:
-  // https://probot.github.io/docs/
+}
 
-  // To get your app running against GitHub, see:
-  // https://probot.github.io/docs/development/
+/** CONSTANTS */
+
+const checkOptions: CheckOptions = {
+  name: 'Lint PR Description',
+  status: 'completed',
+  started_at: new Date().toISOString(),
+  request: {
+    retries: 3,
+    retryAfter: 3,
+  },
+}
+
+/** UTILITY FUNCTIONS */
+
+function lintPrBody(pullRequest: PullRequest) {
+  const {
+    body,
+    head: { sha },
+  } = pullRequest
+
+  if (!body) {
+    return blockPR(sha, '❌ Pull request body must not be empty.')
+  }
+
+  if (requiresQeTeamTesting(body)) {
+    let msg = `
+      ${checkJiraSection(body)}
+      ${checkChangelogSection(body)}
+      ${checkTestingSection(body)}
+    `
+
+    return msg.includes('❌') ? blockPR(sha, msg) : passPR(sha, msg)
+  }
+
+  return passPR(sha, '✅ Required sections have been correctly completed.')
+}
+
+function requiresQeTeamTesting(body: PrBody): boolean {
+  return (
+    body.match(/\[(?<checked>.)\] Requires QE Testing/)?.groups?.checked === 'x'
+  )
+}
+
+function checkJiraSection(body: PrBody): string {
+  const jira =
+    body
+      .match(/## Jira Ticket\(s\)(?<jira>.*?)<!--/s)
+      ?.groups?.jira?.trim?.() || ''
+
+  return jira.length < 3
+    ? '❌ Jira ticket must be included if QE testing checkbox is true.'
+    : '✅ Jira ticket included.'
+}
+
+function checkChangelogSection(body: PrBody): string {
+  const changelog =
+    body
+      .match(/## Public Changelog(?<changelog>.*?)## Technical Description/s)
+      ?.groups?.changelog?.trim?.() || ''
+
+  return /\[(FEATURE|ENHANCEMENT|DEPRECATED|REMOVED|BUGFIX|SECURITY|PERFORMANCE|CHORE)\]/.test(
+    changelog
+  )
+    ? '✅ Changelog formatted correctly.'
+    : '❌ Changelog must follow format: "[FEATURE] Add github oauth login as a new option for logging in.". See PR body comment for more examples.'
+}
+
+function checkTestingSection(body: PrBody): string {
+  const testingInstructions =
+    body
+      .match(/## Testing Instructions(?<testing>.*?)## Screenshots/s)
+      ?.groups?.testing?.trim?.() || ''
+
+  return testingInstructions.length
+    ? '✅ Testing instructions filled out.'
+    : '❌ Testing instructions must be filled out if QE testing checkbox is true.'
+}
+
+function blockPR(sha: string, msg: string): CheckOptions {
+  return {
+    ...checkOptions,
+    conclusion: 'failure',
+    head_sha: sha,
+    output: {
+      title: 'Failed',
+      summary: msg,
+    },
+  }
+}
+
+function passPR(sha: string, msg: string): CheckOptions {
+  return {
+    ...checkOptions,
+    conclusion: 'success',
+    head_sha: sha,
+    output: {
+      title: 'Success',
+      summary: msg,
+    },
+  }
 }
