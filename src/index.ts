@@ -83,7 +83,7 @@ function checkJiraSection(body: PrBody, url: string): string {
 }
 
 function logInfo(str: string, variable: string, url: string) {
-  console.log(`${str}: -->${variable}<-- (${url})`)
+  console.log(`${str}: ===>${variable}<=== (${url})`)
 }
 
 function checkChangelogSection(body: PrBody, url: string): string {
@@ -104,7 +104,7 @@ function checkChangelogSection(body: PrBody, url: string): string {
 function checkTestingSection(body: PrBody, url: string): string {
   const testingInstructions =
     body
-      .match(/## Testing Instructions(?<testing>.*?)## Screenshots/s)
+      .match(/## Testing Instructions(?<testing>.*?)<!--/s)
       ?.groups?.testing?.trim?.() || ''
 
   logInfo('Parsed testing section', testingInstructions, url)
