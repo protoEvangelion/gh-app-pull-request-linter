@@ -8,7 +8,7 @@
 //   probot: createProbot(),
 // })
 
-module.exports.webhooks = function(event, context, callback) {
+module.exports.handler = function(event, context, callback) {
   console.log('YOOOO!!!')
   callback(null, {
       statusCode: 200, 
